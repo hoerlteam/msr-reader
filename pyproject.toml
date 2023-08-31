@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "msr"
+version = "0.1.0"
+authors = [
+  { name="David Hörl", email="hoerldavid@gmail.com" },
+]
+description = "Pure Python reader for MSR/OBF (Imspector) image data"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = ["numpy"]
+
+[project.urls]
+"Homepage" = "https://github.com/hoerlteam/msr"
+"Bug Tracker" = "https://github.com/hoerlteam/msr/issues"

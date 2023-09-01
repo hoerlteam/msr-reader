@@ -70,6 +70,53 @@ def _read_stack_header(fd, position):
 
     return OBFStackHeader(version, size, length, offset, data_type, compression_type>0, name, descr, data_pos, data_len, next_stack_pos)
 
+def _parse_dtype(dtype_flags: int):
+
+    # parse complex flag
+    is_complex = (dtype_flags & 0x40000000) > 0
+    if is_complex:
+        dtype_flags ^= 0x40000000
+
+    if dtype_flags == 0:
+        raise ValueError('automatic data type determination is not supported yet')
+    elif dtype_flags == 1:
+        dtype, samples_per_pixel = np.uint8, 1
+    elif dtype_flags == 2:
+        dtype, samples_per_pixel = np.int8, 1
+    elif dtype_flags == 4:
+        dtype, samples_per_pixel = np.uint16, 1
+    elif dtype_flags == 8:
+        dtype, samples_per_pixel = np.int16, 1
+    elif dtype_flags == 16:
+        dtype, samples_per_pixel = np.uint32, 1
+    elif dtype_flags == 32:
+        dtype, samples_per_pixel = np.int32, 1
+    elif dtype_flags == 64:
+        dtype, samples_per_pixel = np.float32, 1
+    elif dtype_flags == 128:
+        dtype, samples_per_pixel = np.float64, 1
+    elif dtype_flags == 0x00000400:
+        dtype, samples_per_pixel = np.uint8, 3
+    elif dtype_flags == 0x00000800:
+        dtype, samples_per_pixel = np.uint8, 4
+    elif dtype_flags == 0x00001000:
+        dtype, samples_per_pixel = np.uint64, 1
+    elif dtype_flags == 0x00002000:
+        dtype, samples_per_pixel = np.int64, 1
+    elif dtype_flags == 0x00010000:
+        dtype, samples_per_pixel = np.bool_, 1
+    else:
+        raise ValueError(f'unknown data type with flag {dtype_flags}')
+
+    # promote float/double to complex versions, error on other dtypes
+    if is_complex and dtype == np.float32:
+        dtype = np.complex64
+    elif is_complex and dtype == np.float64:
+        dtype = np.complex128
+    elif is_complex:
+        raise ValueError(f'complex data is only supported for float and double.')
+
+    return dtype, samples_per_pixel
 
 def _read_stack(fd, stack_header: OBFStackHeader):
     fd.seek(stack_header.data_position)
@@ -79,13 +126,9 @@ def _read_stack(fd, stack_header: OBFStackHeader):
     if stack_header.compressed:
         buffer = decompress(buffer)
 
-    if stack_header.dtype not in (8, 128):
-        raise ValueError('only int16 or double data is supported at the moment')
-    
-    dtype = {8: np.int16,
-             128: np.float64}[stack_header.dtype]
+    dtype, samples_per_pixel = _parse_dtype(stack_header.dtype)
 
-    return np.frombuffer(buffer, dtype=dtype).reshape(stack_header.size[::-1]).squeeze()
+    return np.frombuffer(buffer, dtype=dtype).reshape(stack_header.size[::-1] + (samples_per_pixel, )).squeeze()
 
 def _read_tag_dict(buffer):
     tag_dict = {}

@@ -20,6 +20,7 @@ from msr import OBFFile
 with OBFFile('file_path.msr') as f:
 
     # reading image data
+    idx = 0
     img = f.read_stack(idx) # read stack with index idx into numpy array
 
     # metadata

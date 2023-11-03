@@ -23,7 +23,7 @@ OBFStackFooter = namedtuple('OBFStackFooter', ['size', 'has_col_positions', 'has
                                                'min_format_version', 'stack_end_used_disk', 'samples_written', 'num_chunk_positions',
                                                'dimension_labels'])
 
-StackSizes = namedtuple('StackSizes', ['name', 'sizes'])
+StackSizes = namedtuple('StackSizes', ['name', 'sizes', 'dimension_names'])
 
 def _read_file_header(fd):
     header_fmt = '<10sLQL'
@@ -250,11 +250,13 @@ class OBFFile:
             header_i : OBFStackHeader = self.stack_headers[i]
             footer_i : OBFStackFooter = self.stack_footers[i]
 
-            siz_dict = {}
+            sizes_stack = []
+            dimension_labels = []
             for siz, label in zip(reversed(header_i.size), reversed(footer_i.dimension_labels)):
                 if siz > 1:
-                    siz_dict[label] = siz
-            sizes.append(StackSizes(header_i.name, siz_dict))
+                    sizes_stack.append(siz)
+                    dimension_labels.append(label)
+            sizes.append(StackSizes(header_i.name, sizes_stack, dimension_labels))
         return sizes
     
 
@@ -264,11 +266,14 @@ class OBFFile:
         for i in range(self.num_stacks):
             header_i : OBFStackHeader = self.stack_headers[i]
             footer_i : OBFStackFooter = self.stack_footers[i]
-            siz_dict = {}
+
+            sizes_stack = []
+            dimension_labels = []
             for siz, length, label in zip(reversed(header_i.size), reversed(header_i.length), reversed(footer_i.dimension_labels)):
                 if siz > 1:
-                    siz_dict[label] = length / siz
-            pixel_sizes.append(StackSizes(header_i.name, siz_dict))
+                    sizes_stack.append(length / siz)
+                    dimension_labels.append(label)
+            pixel_sizes.append(StackSizes(header_i.name, sizes_stack, dimension_labels))
         return pixel_sizes
 
 

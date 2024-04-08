@@ -9,13 +9,13 @@ Implementation follows the description at: https://imspectordocs.readthedocs.io/
 ## Installation
 
 ```
-pip install msr
+pip install msr-reader
 ```
 
 ## Usage
 
 ```python
-from msr import OBFFile
+from msr_reader import OBFFile
 from xml.etree import ElementTree
 
 with OBFFile('file_path.msr') as f:

@@ -16,6 +16,7 @@ pip install msr
 
 ```python
 from msr import OBFFile
+from xml.etree import ElementTree
 
 with OBFFile('file_path.msr') as f:
 
@@ -24,19 +25,14 @@ with OBFFile('file_path.msr') as f:
     img = f.read_stack(idx) # read stack with index idx into numpy array
 
     # metadata
-    stack_sizes = f.sizes # list of stack sizes/shapes, including stack and dimension names
+    stack_shapes = f.shapes # list of stack shapes, including stack and dimension names
     pixel_sizes = f.pixel_sizes # like sizes, but with pixel sizes (unit: meters)
 
-    # XML metadata is usually part of the tag dictionary of stack footer
-    stack_footer = f.stack_footers[idx] # get footer of stack idx
-
     # imspector metadata as xml string
-    xml_imspector_metadata = stack_footer.tag_dictionary['imspector']
+    xml_imspector_metadata = f.get_xml_metadata(idx)
     
-    # can be parsed with ElementTree, for example
-    from xml.etree import ElementTree    
+    # can be parsed with ElementTree, for example    
     et = ElementTree.fromstring(xml_imspector_metadata)
     # find, e.g. x pixel size in XML
     et.find('doc/ExpControl/scan/range/x/psz').text
-
 ```

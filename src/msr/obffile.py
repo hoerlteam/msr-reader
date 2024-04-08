@@ -244,8 +244,8 @@ class OBFFile:
         return len(self.stack_headers)
 
     @property
-    def sizes(self):
-        sizes = []
+    def shapes(self):
+        shapes = []
         for i in range(self.num_stacks):
             header_i : OBFStackHeader = self.stack_headers[i]
             footer_i : OBFStackFooter = self.stack_footers[i]
@@ -256,8 +256,8 @@ class OBFFile:
                 if siz > 1:
                     sizes_stack.append(siz)
                     dimension_labels.append(label)
-            sizes.append(StackSizes(header_i.name, sizes_stack, dimension_labels))
-        return sizes
+            shapes.append(StackSizes(header_i.name, sizes_stack, dimension_labels))
+        return shapes
     
 
     @property
@@ -276,6 +276,34 @@ class OBFFile:
             pixel_sizes.append(StackSizes(header_i.name, sizes_stack, dimension_labels))
         return pixel_sizes
 
+    def shape(self, stack_idx):
+        """
+        get size in pixels (array shape) of stack with index stack_idx
+        """
+        return self.shapes[stack_idx].sizes
+
+    def pixel_size(self, stack_idx):
+        """
+        get pixel size (in meters) of stack with index stack_idx
+        """
+        return self.pixel_sizes[stack_idx].sizes
+
+    def get_xml_metadata(self, stack_idx):
+        """
+        get XML metadata string of stack with index stack_idx
+        """
+
+        # get footer of stack_idx
+        stack_footer = self.stack_footers[stack_idx] 
+
+        # check if we actually have metadata for our stack (some like rescue_info don't seem to have it)
+        # return empty string if no metadata is present
+        if 'imspector' in stack_footer.tag_dictionary:
+            xml_imspector_metadata = stack_footer.tag_dictionary['imspector']
+        else:
+            xml_imspector_metadata = ''
+
+        return xml_imspector_metadata
 
     def close(self):
         self.fd.close()

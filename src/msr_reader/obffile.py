@@ -288,7 +288,7 @@ class OBFFile:
         """
         return self.pixel_sizes[stack_idx].sizes
 
-    def get_xml_metadata(self, stack_idx):
+    def get_imspector_xml_metadata(self, stack_idx):
         """
         get XML metadata string of stack with index stack_idx
         """
@@ -304,6 +304,19 @@ class OBFFile:
             xml_imspector_metadata = ''
 
         return xml_imspector_metadata
+
+    def get_ome_xml_metadata(self):
+        """
+        get OME-XML metadata string
+        """
+
+        # check that we have metadata (will be available through main header)
+        if 'ome_xml' in self.main_header.metadata:
+            ome_xml_metadata = self.main_header.metadata['ome_xml']
+        else:
+            ome_xml_metadata = ''
+
+        return ome_xml_metadata
 
     def close(self):
         self.fd.close()

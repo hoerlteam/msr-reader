@@ -1,5 +1,6 @@
 import struct
 from collections import namedtuple
+from io import BytesIO
 from zlib import decompress
 
 import numpy as np
@@ -52,10 +53,7 @@ def _read_stack_header(fd, position):
 
     if not magic_header == MAGIC_STACK_HEADER:
         raise ValueError('Can not parse stack, no magic header found')
-    
-    if version < 5:
-        raise ValueError('stack versions <5 not implemented yet')
-    
+
     size = struct.unpack(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}L', fd.read(struct.calcsize(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}L')))[:rank]
     length = struct.unpack(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}d', fd.read(struct.calcsize(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}d')))[:rank]
     offset = struct.unpack(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}d', fd.read(struct.calcsize(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}d')))[:rank]
@@ -155,56 +153,86 @@ def _to_si_unit(unpack_output):
 
 def _read_stack_footer(fd, stack_header: OBFStackHeader):
 
+    # seek to footer start (after binary data)
     fd.seek(stack_header.data_position + stack_header.data_length)
 
-    (size,) = struct.unpack(f'<L', fd.read(struct.calcsize(f'<L')))
-
-    has_col_info_fmt = f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}L'
-    has_col_positions = struct.unpack(has_col_info_fmt, fd.read(struct.calcsize(has_col_info_fmt)))[:len(stack_header.size)]
-    has_col_labels = struct.unpack(has_col_info_fmt, fd.read(struct.calcsize(has_col_info_fmt)))[:len(stack_header.size)]
-
-    (metadata_length,) = struct.unpack(f'<L', fd.read(struct.calcsize(f'<L')))
-
-    si_fmt = '<18ld'
-    si_value = _to_si_unit(struct.unpack(si_fmt, fd.read(struct.calcsize(si_fmt))))
-    si_dimensions = []
-    for _ in range(MAXIMAL_NUMBER_OF_DIMENSIONS):
-        si_dimensions.append(_to_si_unit(struct.unpack(si_fmt, fd.read(struct.calcsize(si_fmt)))))
-
-    if stack_header.stack_version > 5:
-        stack_footer_fmt = '<QQQQLQQQ'
-        unpack_out = struct.unpack(stack_footer_fmt, fd.read(struct.calcsize(stack_footer_fmt)))
-        (num_flush_points, flush_block_size, tag_dictionary_length,
-          stack_end_disk, min_format_version, stack_end_used_disk, samples_written, num_chunk_positions) = unpack_out
+    # V1
+    if stack_header.stack_version >= 1:
+        (size,) = struct.unpack(f'<L', fd.read(struct.calcsize(f'<L')))
+        has_col_info_fmt = f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}L'
+        has_col_positions = struct.unpack(has_col_info_fmt, fd.read(struct.calcsize(has_col_info_fmt)))[:len(stack_header.size)]
+        has_col_labels = struct.unpack(has_col_info_fmt, fd.read(struct.calcsize(has_col_info_fmt)))[:len(stack_header.size)]
+        (metadata_length,) = struct.unpack(f'<L', fd.read(struct.calcsize(f'<L')))
     else:
-        stack_footer_fmt = '<QQQQL'
-        unpack_out = struct.unpack(stack_footer_fmt, fd.read(struct.calcsize(stack_footer_fmt)))
-        (num_flush_points, flush_block_size, tag_dictionary_length,
-          stack_end_disk, min_format_version, stack_end_used_disk, samples_written, num_chunk_positions) = unpack_out + (None, None, None)
+        size, has_col_positions, has_col_labels, metadata_length = None, None, None, None
 
+    # V2
+    if stack_header.stack_version >= 2:
+        si_fmt = '<18ld'
+        si_value = _to_si_unit(struct.unpack(si_fmt, fd.read(struct.calcsize(si_fmt))))
+        si_dimensions = []
+        for _ in range(MAXIMAL_NUMBER_OF_DIMENSIONS):
+            si_dimensions.append(_to_si_unit(struct.unpack(si_fmt, fd.read(struct.calcsize(si_fmt)))))
+    else:
+        si_value, si_dimensions = None, None
+
+    # V3
+    if stack_header.stack_version >= 3:
+        flush_fmt = '<QQ'
+        num_flush_points, flush_block_size = struct.unpack(flush_fmt, fd.read(struct.calcsize(flush_fmt)))
+    else:
+        num_flush_points, flush_block_size = 0, None
+
+    # V4
+    if stack_header.stack_version >= 4:
+        (tag_dictionary_length,) = struct.unpack('<Q', fd.read(struct.calcsize('<Q')))
+    else:
+        tag_dictionary_length = None
+
+    # V5
+    if stack_header.stack_version >= 5:
+        stack_end_disk, min_format_version, stack_end_used_disk = struct.unpack('<QLQ', fd.read(struct.calcsize('<QLQ')))
+    else:
+        stack_end_disk, min_format_version, stack_end_used_disk = None, None, None
+
+    # V6
+    if stack_header.stack_version >= 6:
+        samples_written, num_chunk_positions = struct.unpack('<QQ', fd.read(struct.calcsize('<QQ')))
+    else:
+        samples_written, num_chunk_positions = None, None
+
+    # in any case: seek to end of footer
+    fd.seek(stack_header.data_position + stack_header.data_length + size)
+
+    # extra info after footer
     labels = []
     for _ in range(len(stack_header.size)):
         (n,) = struct.unpack(f'<L', fd.read(struct.calcsize(f'<L')))
         (s,) = struct.unpack(f'<{n}s', fd.read(struct.calcsize(f'<{n}s')))
         labels.append(s.decode('utf8'))
 
-    # TODO: handle col_positions, col_labels, chunked storage
-    if any(has_col_labels) or any(has_col_positions):
-        raise ValueError('col_label and col_position parsing not implemented yet')
-    if num_chunk_positions is not None and num_chunk_positions > 0:
-        raise ValueError('chunked storage not implemented yet')
-    
-    metadata = fd.read(metadata_length).decode('utf-8')
+    if stack_header.stack_version >= 1:
+        # TODO: handle col_positions, col_labels, chunked storage
+        if any(has_col_labels) or any(has_col_positions):
+            raise ValueError('col_label and col_position parsing not implemented yet')
+        if num_chunk_positions is not None and num_chunk_positions > 0:
+            raise ValueError('chunked storage not implemented yet')
 
-    # FLUSH POSITIONS
+        metadata = fd.read(metadata_length).decode('utf-8')
+    else:
+        metadata = ""
+
+    # FLUSH POSITIONS (only >=V3, but since num_flush_points defaults to 0 this will do nothing)
     flush_positions = []
     for _ in range(num_flush_points):
         (fp,) = struct.unpack(f'<Q', fd.read(struct.calcsize(f'<Q')))
         flush_positions.append(fp)
 
-    # tag_dict_buf = BytesIO(fd.read(tag_dictionary_length))
-    tag_dict = _read_tag_dict(fd)    
-    
+    if stack_header.stack_version >= 4:
+        tag_dict_buf = BytesIO(fd.read(tag_dictionary_length))
+        tag_dict = _read_tag_dict(tag_dict_buf)
+    else:
+        tag_dict = {}
 
     return OBFStackFooter(size, has_col_positions, has_col_labels, metadata, si_value, si_dimensions, flush_positions,
                    flush_block_size, tag_dict, stack_end_disk, min_format_version, stack_end_used_disk,

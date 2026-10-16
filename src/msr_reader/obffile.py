@@ -19,7 +19,7 @@ OBFSIFraction = namedtuple('OBFSIFraction', ['numerator', 'denominator'])
 OBFSIUnit = namedtuple('OBFSIUnit', ['meters', 'kilograms', 'seconds', 'amperes', 'kelvin', 'moles',
                             'candela', 'radian', 'steradian', 'scale_factor'])
 
-OBFStackFooter = namedtuple('OBFStackFooter', ['size', 'has_col_positions', 'has_col_labels', 'metadata', 'si_value', 'si_dimensions',
+OBFStackFooter = namedtuple('OBFStackFooter', ['size', 'has_col_positions', 'has_col_labels', 'col_positions', 'col_labels', 'metadata', 'si_value', 'si_dimensions',
                                                'flush_positions', 'flush_block_size', 'tag_dictionary', 'stack_end_disk',
                                                'min_format_version', 'stack_end_used_disk', 'samples_written', 'num_chunk_positions',
                                                'dimension_labels'])
@@ -157,7 +157,9 @@ def _empty_stack_footer(stack_header: OBFStackHeader):
     # dimension_labels are padded to the stack rank so they stay aligned with
     # the stack axes (they are zipped together in OBFFile.shapes/pixel_sizes).
     return OBFStackFooter(
-        size=None, has_col_positions=None, has_col_labels=None, metadata='',
+        size=None, has_col_positions=None, has_col_labels=None,
+        col_positions=[None] * len(stack_header.size), col_labels=[None] * len(stack_header.size),
+        metadata='',
         si_value=None, si_dimensions=None, flush_positions=[], flush_block_size=None,
         tag_dictionary={}, stack_end_disk=None, min_format_version=None,
         stack_end_used_disk=None, samples_written=None, num_chunk_positions=None,
@@ -228,11 +230,35 @@ def _read_stack_footer(fd, stack_header: OBFStackHeader):
         labels.append(s.decode('utf8'))
 
     if stack_header.stack_version >= 1:
-        # TODO: handle col_positions, col_labels, chunked storage
-        if any(has_col_labels) or any(has_col_positions):
-            raise ValueError('col_label and col_position parsing not implemented yet')
+        # TODO: handle chunked storage
         if num_chunk_positions is not None and num_chunk_positions > 0:
             raise ValueError('chunked storage not implemented yet')
+
+        # column positions: for each axis with has_col_positions[i] != 0 an array
+        # of res[i] float64 values follows.
+        # entries are None for axes without positions.
+        # NOTE: we assume all position arrays come before the column label arrays
+        # TODO: needs testing on actual data!
+        col_positions = []
+        for i, has_pos in enumerate(has_col_positions):
+            if has_pos:
+                col_positions.append(np.frombuffer(fd.read(8 * stack_header.size[i]), dtype='<f8'))
+            else:
+                col_positions.append(None)
+
+        # column labels: for each axis with has_col_labels[i] != 0 an array of
+        # res[i] strings follows (same encoding as the dimension labels above).
+        # entries are None for axes without column labels.
+        col_labels = []
+        for i, has_lab in enumerate(has_col_labels):
+            if has_lab:
+                labels_i = []
+                for _ in range(stack_header.size[i]):
+                    (n,) = struct.unpack(f'<L', fd.read(struct.calcsize(f'<L')))
+                    labels_i.append(fd.read(n).decode('utf8'))
+                col_labels.append(labels_i)
+            else:
+                col_labels.append(None)
 
         metadata = fd.read(metadata_length).decode('utf-8')
     else:
@@ -250,7 +276,7 @@ def _read_stack_footer(fd, stack_header: OBFStackHeader):
     else:
         tag_dict = {}
 
-    return OBFStackFooter(size, has_col_positions, has_col_labels, metadata, si_value, si_dimensions, flush_positions,
+    return OBFStackFooter(size, has_col_positions, has_col_labels, col_positions, col_labels, metadata, si_value, si_dimensions, flush_positions,
                    flush_block_size, tag_dict, stack_end_disk, min_format_version, stack_end_used_disk,
                     samples_written, num_chunk_positions, labels)
 

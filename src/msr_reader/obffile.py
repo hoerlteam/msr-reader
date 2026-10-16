@@ -1,5 +1,6 @@
 import re
 import struct
+import warnings
 from collections import namedtuple
 from io import BytesIO
 from zlib import decompress
@@ -124,7 +125,7 @@ def _parse_dtype(dtype_flags: int):
 
     return dtype, samples_per_pixel
 
-def _read_stack(fd, stack_header: OBFStackHeader):
+def _read_stack(fd, stack_header: OBFStackHeader, samples_written=None):
     fd.seek(stack_header.data_position)
     buffer = fd.read(stack_header.data_length)
 
@@ -133,6 +134,21 @@ def _read_stack(fd, stack_header: OBFStackHeader):
         buffer = decompress(buffer)
 
     dtype, samples_per_pixel = _parse_dtype(stack_header.dtype)
+
+    # a measurement ended early only writes samples_written samples (footer V6+),
+    # by convention the missing data is zero (see file format spec), so pad short
+    # buffers up to the full stack size (and drop any excess padding)
+    num_samples = int(np.prod(stack_header.size)) * samples_per_pixel
+    expected_bytes = num_samples * np.dtype(dtype).itemsize
+    if len(buffer) < expected_bytes:
+        buffer += b'\x00' * (expected_bytes - len(buffer))
+    elif len(buffer) > expected_bytes:
+        buffer = buffer[:expected_bytes]
+
+    # samples_written == 0 means the full stack is on disk (see spec)
+    if samples_written and samples_written < num_samples:
+        warnings.warn(f'stack {stack_header.name!r} was truncated, only {samples_written} of '
+                      f'{num_samples} samples were written, the remainder is zero-padded')
 
     return np.frombuffer(buffer, dtype=dtype).reshape(stack_header.size[::-1] + (samples_per_pixel, )).squeeze()
 
@@ -317,7 +333,7 @@ class OBFFile:
             self.stack_footers.append(stack_footer)
 
     def read_stack(self, idx):
-        return _read_stack(self.fd, self.stack_headers[idx])
+        return _read_stack(self.fd, self.stack_headers[idx], self.stack_footers[idx].samples_written)
     
     @property
     def num_stacks(self):

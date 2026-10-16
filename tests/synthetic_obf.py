@@ -57,6 +57,8 @@ class StackSpec:
     :param col_positions: per-axis list of float positions or None
     :param col_labels: per-axis list of label strings or None
     :param dimension_labels: per-axis dimension label (default: empty strings)
+    :param reserved: OBF stack header reserved field, 0 marks a data-less
+        stack (real files carry 1)
     :param extra_footer_bytes: bytes appended to the footer without updating
         the reader, emulates a higher footer version than we implement (V7+)
     '''
@@ -65,7 +67,7 @@ class StackSpec:
                  lengths=None, compression=False, description='',
                  metadata='', tag_dict=None, samples_written=None,
                  col_positions=None, col_labels=None,
-                 dimension_labels=None, extra_footer_bytes=0):
+                 dimension_labels=None, reserved=1, extra_footer_bytes=0):
         self.name = name
         self.size = tuple(size)
         self.dtype_flags = dtype_flags
@@ -80,6 +82,7 @@ class StackSpec:
         self.col_positions = col_positions
         self.col_labels = col_labels
         self.dimension_labels = dimension_labels
+        self.reserved = reserved
         self.extra_footer_bytes = extra_footer_bytes
 
 
@@ -99,7 +102,7 @@ def _stack_blob(spec, next_stack_pos):
     out += struct.pack(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}d', *lengths, *([0.0] * pad))
     out += struct.pack(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}d', *([0.0] * MAXIMAL_NUMBER_OF_DIMENSIONS))
     out += struct.pack('<LLLLLQQQ', spec.dtype_flags, 1 if spec.compression else 0, 0,
-                       len(name_b), len(descr_b), 0, len(data), next_stack_pos)
+                       len(name_b), len(descr_b), spec.reserved, len(data), next_stack_pos)
     out += name_b + descr_b + data
 
     if spec.stack_version < 1:

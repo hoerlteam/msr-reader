@@ -208,5 +208,29 @@ class TestSamplesPerPixel(unittest.TestCase):
             self.assertEqual(data.dtype, np.uint8)
 
 
+class TestDataLessStack(unittest.TestCase):
+    'reserved == 0 marks a stack without data on disk, no real-world sample exists'
+
+    def test_data_less_stack_reads_as_zeros_with_warning(self):
+        blob = build_obf([StackSpec('empty {0}', (3, 4), INT16, b'', reserved=0)])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            with obf_file(blob) as obf:
+                data = obf.read_stack(0)
+        self.assertEqual(data.shape, (4, 3))
+        self.assertEqual(data.tolist(), [[0] * 3] * 4)
+        self.assertTrue(any('data-less' in str(w.message) for w in caught))
+
+    def test_data_carrying_stack_does_not_warn(self):
+        # real files carry reserved = 1, reading them must stay warning-free
+        blob = build_obf([StackSpec('full {0}', (3, 4), INT16, struct.pack('<12h', *range(12)))])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            with obf_file(blob) as obf:
+                data = obf.read_stack(0)
+        self.assertEqual(data.flatten().tolist(), list(range(12)))
+        self.assertEqual(caught, [])
+
+
 if __name__ == '__main__':
     unittest.main()

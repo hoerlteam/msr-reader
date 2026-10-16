@@ -15,7 +15,7 @@ OBFHeader = namedtuple('OBFHeader', ['format_version', 'description', 'first_sta
 
 class OBFStackHeader(namedtuple('OBFStackHeader',
     ['stack_version', 'size', 'length', 'offset', 'dtype', 'compressed', 'name',
-     'description', 'data_position', 'data_length', 'next_stack_position'])):
+     'description', 'data_position', 'reserved', 'data_length', 'next_stack_position'])):
 
     @property
     def numpy_dtype(self):
@@ -104,14 +104,14 @@ def _read_stack_header(fd, position):
     offset = struct.unpack(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}d', fd.read(struct.calcsize(f'<{MAXIMAL_NUMBER_OF_DIMENSIONS}d')))[:rank]
 
     stack_header_fmt2 = '<LLLLLQQQ'
-    data_type, compression_type, compression_level, name_len, descr_len, _, data_len, next_stack_pos = struct.unpack(stack_header_fmt2, fd.read(struct.calcsize(stack_header_fmt2)))
-    
+    data_type, compression_type, compression_level, name_len, descr_len, reserved, data_len, next_stack_pos = struct.unpack(stack_header_fmt2, fd.read(struct.calcsize(stack_header_fmt2)))
+
     name = fd.read(name_len).decode('utf-8')
     descr = fd.read(descr_len).decode('utf-8')
 
     data_pos = fd.tell()
 
-    return OBFStackHeader(version, size, length, offset, data_type, compression_type>0, name, descr, data_pos, data_len, next_stack_pos)
+    return OBFStackHeader(version, size, length, offset, data_type, compression_type>0, name, descr, data_pos, reserved, data_len, next_stack_pos)
 
 def _parse_dtype(dtype_flags: int):
 
@@ -170,6 +170,11 @@ def _read_stack(fd, stack_header: OBFStackHeader, samples_written=None):
         buffer = decompress(buffer)
 
     dtype, samples_per_pixel = _parse_dtype(stack_header.dtype)
+
+    # reserved == 0 marks a data-less stack: no data on disk, the array is
+    # filled with zeros by convention (see file format spec)
+    if stack_header.reserved == 0:
+        warnings.warn(f'stack {stack_header.name!r} is data-less, the returned data is all zeros')
 
     # a measurement ended early only writes samples_written samples (footer V6+),
     # by convention the missing data is zero (see file format spec), so pad short

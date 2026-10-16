@@ -151,7 +151,23 @@ def _to_si_unit(unpack_output):
     return OBFSIUnit(*unit_fractions, unpack_output[-1])
     
 
+def _empty_stack_footer(stack_header: OBFStackHeader):
+    # stack footers only exist from stack version 1 on. version-0 stacks carry no
+    # footer, labels or tag dictionary on disk, so return empty/default values.
+    # dimension_labels are padded to the stack rank so they stay aligned with
+    # the stack axes (they are zipped together in OBFFile.shapes/pixel_sizes).
+    return OBFStackFooter(
+        size=None, has_col_positions=None, has_col_labels=None, metadata='',
+        si_value=None, si_dimensions=None, flush_positions=[], flush_block_size=None,
+        tag_dictionary={}, stack_end_disk=None, min_format_version=None,
+        stack_end_used_disk=None, samples_written=None, num_chunk_positions=None,
+        dimension_labels=[''] * len(stack_header.size))
+
 def _read_stack_footer(fd, stack_header: OBFStackHeader):
+
+    # version-0 stacks are written without any footer
+    if stack_header.stack_version < 1:
+        return _empty_stack_footer(stack_header)
 
     # seek to footer start (after binary data)
     fd.seek(stack_header.data_position + stack_header.data_length)
@@ -338,8 +354,9 @@ class OBFFile:
         get OME-XML metadata string
         """
 
-        # check that we have metadata (will be available through main header)
-        if 'ome_xml' in self.main_header.metadata:
+        # check that we have metadata (will be available through main header,
+        # but only from file format version 2 on)
+        if self.main_header.metadata and 'ome_xml' in self.main_header.metadata:
             ome_xml_metadata = self.main_header.metadata['ome_xml']
         else:
             ome_xml_metadata = ''

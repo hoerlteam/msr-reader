@@ -1,3 +1,4 @@
+import re
 import struct
 from collections import namedtuple
 from io import BytesIO
@@ -25,6 +26,13 @@ OBFStackFooter = namedtuple('OBFStackFooter', ['size', 'has_col_positions', 'has
                                                'dimension_labels'])
 
 StackSizes = namedtuple('StackSizes', ['name', 'sizes', 'dimension_names'])
+
+# pattern of default Imspector stack names: a user-settable channel name
+# followed by the series number of the acquisition, e.g. 'STAR RED_CONF {0}'
+STACK_NAME_PATTERN = re.compile(r'^(?P<base>.+) \{(?P<series>\d+)\}$')
+
+StackGroup = namedtuple('StackGroup', ['series', 'channel_names', 'indices',
+                                       'shape', 'dtype', 'pixel_sizes', 'dimension_names'])
 
 def _read_file_header(fd):
     header_fmt = '<10sLQL'
@@ -288,10 +296,12 @@ class OBFFile:
     https://imspectordocs.readthedocs.io/en/latest/fileformat.html
     """
 
-    def __init__(self, path):
+    def __init__(self, path, group_unnamed_stacks=False):
         self.fd = open(path, 'rb')
+        self._group_unnamed_stacks = group_unnamed_stacks
         self._parse_headers()
         self.stack_names = [s.name for s in self.stack_headers]
+        self._stack_groups = None
 
     def _parse_headers(self):
         self.main_header = _read_file_header(self.fd)
@@ -357,6 +367,98 @@ class OBFFile:
         get pixel size (in meters) of stack with index stack_idx
         """
         return self.pixel_sizes[stack_idx].sizes
+
+    def _group_key(self, stack_idx):
+        # geometry part of the stack grouping key: shape, data type, pixel
+        # sizes and dimension labels.
+        header_i = self.stack_headers[stack_idx]
+        shapes_i = self.shapes[stack_idx]
+        pixel_sizes_i = self.pixel_sizes[stack_idx]
+        # round pixel sizes to a fixed number of significant digits to make the
+        # comparison robust against float noise: scientific notation rounds with
+        # relative precision, unlike round()/np.round() which round to decimal
+        # places (absolute precision) and would merge distinct pixel sizes
+        # around the nanometer scale (or collapse tiny values onto each other)
+        pixel_sizes_rounded = tuple(float(f'{p:.9e}') for p in pixel_sizes_i.sizes)
+        return (tuple(shapes_i.sizes), header_i.dtype, pixel_sizes_rounded, tuple(shapes_i.dimension_names))
+
+    @property
+    def stack_groups(self):
+        """
+        stacks grouped into channels: stacks acquired in the same series
+        (the number in curly braces in the stack name) with identical geometry
+        (shape, data type, pixel sizes, dimension labels) are considered
+        channels of the same acquisition. stacks that fit nowhere (e.g.
+        auxiliary stacks like rescue_info maps, or stacks without a parseable
+        name) form single-member groups. every stack is part of exactly one
+        group, so the groups are always a partition of all stacks.
+        """
+        if self._stack_groups is None:
+            self._stack_groups = self._compute_stack_groups()
+        return self._stack_groups
+
+    def _compute_stack_groups(self):
+        groups = []
+        key_to_group = {}
+        for idx in range(self.num_stacks):
+            name = self.stack_names[idx]
+
+            # auxiliary data like ResCue switch-off maps is never treated as a channel
+            if 'rescue_info' in name:
+                key = None
+            else:
+                match = STACK_NAME_PATTERN.match(name)
+                if match is not None:
+                    key = (int(match.group('series')),) + self._group_key(idx)
+                elif name == '' and self._group_unnamed_stacks:
+                    # opt-in: group unnamed stacks by geometry alone (series unknown)
+                    key = (None,) + self._group_key(idx)
+                else:
+                    key = None
+
+            if key is None:
+                groups.append([idx])
+            elif key in key_to_group:
+                groups[key_to_group[key]].append(idx)
+            else:
+                key_to_group[key] = len(groups)
+                groups.append([idx])
+
+        return [self._make_stack_group(indices) for indices in groups]
+
+    def _make_stack_group(self, indices):
+        header_i = self.stack_headers[indices[0]]
+        shapes_i = self.shapes[indices[0]]
+        pixel_sizes_i = self.pixel_sizes[indices[0]]
+
+        series = None
+        channel_names = []
+        for idx in indices:
+            name = self.stack_names[idx]
+            match = STACK_NAME_PATTERN.match(name)
+            if match is not None:
+                series = int(match.group('series'))
+                channel_names.append(match.group('base'))
+            elif name:
+                channel_names.append(name)
+            else:
+                channel_names.append(f'stack {idx}')
+
+        try:
+            dtype, _ = _parse_dtype(header_i.dtype)
+        except ValueError:
+            dtype = None
+
+        return StackGroup(series, channel_names, indices, tuple(shapes_i.sizes), dtype,
+                          list(pixel_sizes_i.sizes), list(shapes_i.dimension_names))
+
+    def read_stack_group(self, group_idx, axis=0):
+        """
+        read all stacks of a group, stacked along a new axis (default: first,
+        i.e. (C, Z, Y, X)). single-member groups get an axis of length one.
+        """
+        group = self.stack_groups[group_idx]
+        return np.stack([self.read_stack(i) for i in group.indices], axis=axis)
 
     def get_imspector_xml_metadata(self, stack_idx):
         """

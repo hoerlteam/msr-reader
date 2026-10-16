@@ -25,6 +25,16 @@ with OBFFile('file_path.msr') as f:
     idx = 0
     img = f.read_stack(idx) # read stack with index idx into numpy array
 
+    # multi-channel (or confocal + STED) data is acquired into separate stacks by Imspector.
+    # stack_groups groups stacks with same series number in the stack name and identical geometry.
+    # every stack belongs to exactly one group, unmatched stacks
+    # (e.g. line profiles, rescue_info maps) form single-member groups.
+    groups = f.stack_groups # list of StackGroup
+    img = f.read_stack_group(0) # read all "channels", stacked along a new first axis: e.g. (C, Z, Y, X)
+
+    # stacks without names (sometimes found in old files) can be grouped by geometry alone:
+    # with OBFFile('file_path.msr', group_unnamed_stacks=True) as f:
+
     # metadata
     stack_shapes = f.shapes # list of stack shapes, including stack and dimension names
     pixel_sizes = f.pixel_sizes # like shapes, but with pixel sizes (unit: meters)

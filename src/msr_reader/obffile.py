@@ -13,9 +13,19 @@ MAGIC_STACK_HEADER = b'OMAS_BF_STACK\n\xff\xff'
 
 OBFHeader = namedtuple('OBFHeader', ['format_version', 'description', 'first_stack_position', 'metadata_position', 'metadata'])
 
-OBFStackHeader = namedtuple('OBFStackHeader',
+class OBFStackHeader(namedtuple('OBFStackHeader',
     ['stack_version', 'size', 'length', 'offset', 'dtype', 'compressed', 'name',
-     'description', 'data_position', 'data_length', 'next_stack_position'])
+     'description', 'data_position', 'data_length', 'next_stack_position'])):
+
+    @property
+    def numpy_dtype(self):
+        '''
+        numpy dtype of the stack data. note that dtype holds the raw OMAS_DT
+        flag from the file (including the complex bit and, for RGB types, the
+        number of samples per pixel), which is not fully captured by a numpy
+        dtype. raises ValueError for unsupported flags.
+        '''
+        return _parse_dtype(self.dtype)[0]
 
 OBFSIFraction = namedtuple('OBFSIFraction', ['numerator', 'denominator'])
 OBFSIUnit = namedtuple('OBFSIUnit', ['meters', 'kilograms', 'seconds', 'amperes', 'kelvin', 'moles',

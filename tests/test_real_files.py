@@ -13,7 +13,6 @@ import unittest
 import numpy as np
 
 from msr_reader import OBFFile
-from msr_reader.obffile import _parse_dtype
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
@@ -58,7 +57,7 @@ class TestOldFiles(unittest.TestCase):
             # four identical images, two short line profiles, one long one
             shapes = [obf.shape(i) for i in range(7)]
             self.assertEqual(shapes, [[490, 450]] * 4 + [[18], [18], [665]])
-            self.assertEqual([_parse_dtype(h.dtype)[0] for h in obf.stack_headers],
+            self.assertEqual([h.numpy_dtype for h in obf.stack_headers],
                              [np.int16] * 4 + [np.float64] * 3)
 
             # unnamed stacks stay singletons by default

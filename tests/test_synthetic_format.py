@@ -13,10 +13,42 @@ import warnings
 
 import numpy as np
 
+from msr_reader import OBFSIFraction, OBFSIUnit
 from msr_reader.obffile import _parse_dtype
 from .synthetic_obf import StackSpec, build_obf, obf_file
 
 INT16 = 0x8  # OMAS_DT_SINT16
+
+
+class TestSIUnitFormatting(unittest.TestCase):
+
+    def _unit(self, exponents=(), scale_factor=1.0):
+        names = ('meters', 'kilograms', 'seconds', 'amperes', 'kelvin',
+                 'moles', 'candela', 'radian', 'steradian')
+        fractions = [OBFSIFraction(0, 1)] * 9
+        for name, numerator, denominator in exponents:
+            fractions[names.index(name)] = OBFSIFraction(numerator, denominator)
+        return OBFSIUnit(*fractions, scale_factor)
+
+    def test_common_units(self):
+        self.assertEqual(str(self._unit()), 'dimensionless')
+        self.assertEqual(str(self._unit([('meters', 1, 1)])), 'm')
+        self.assertEqual(str(self._unit([('meters', 1, 1), ('seconds', -1, 1)])), 'm * s^-1')
+        self.assertEqual(str(self._unit([('meters', 2, 1), ('kilograms', 1, 1),
+                                        ('seconds', -3, 1), ('amperes', -1, 1)])),
+                         'm^2 * kg * s^-3 * A^-1')  # volt
+
+    def test_fractional_exponents_and_scale(self):
+        # sqrt(Hz) style noise spectral densities are why exponents are fractions
+        self.assertEqual(str(self._unit([('seconds', -1, 2)])), 's^(-1/2)')
+        # scale factor is only printed when it is not 1
+        self.assertEqual(str(self._unit([('meters', 1, 1)], scale_factor=1e-9)), 'm * 1e-09')
+        self.assertEqual(str(self._unit(scale_factor=1e-9)), 'dimensionless * 1e-09')
+
+    def test_repr_matches_str(self):
+        # notebooks display repr, both should show the pretty form
+        unit = self._unit([('meters', 1, 1)])
+        self.assertEqual(repr(unit), 'm')
 
 
 class TestDtypeParsing(unittest.TestCase):

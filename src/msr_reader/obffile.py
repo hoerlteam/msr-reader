@@ -29,8 +29,33 @@ class OBFStackHeader(namedtuple('OBFStackHeader',
         return np.dtype(_parse_dtype(self.dtype)[0])
 
 OBFSIFraction = namedtuple('OBFSIFraction', ['numerator', 'denominator'])
-OBFSIUnit = namedtuple('OBFSIUnit', ['meters', 'kilograms', 'seconds', 'amperes', 'kelvin', 'moles',
-                            'candela', 'radian', 'steradian', 'scale_factor'])
+class OBFSIUnit(namedtuple('OBFSIUnit', ['meters', 'kilograms', 'seconds', 'amperes', 'kelvin', 'moles',
+                            'candela', 'radian', 'steradian', 'scale_factor'])):
+    '''
+    an SI unit: the 9 base/supplementary units with rational exponents
+    (OBFSIFraction each, numerator 0 = unused), multiplied by scale_factor,
+    i.e. unit = scale_factor * m^p1 * kg^p2 * s^p3 * ...
+    '''
+
+    # symbols matching the exponent field order above
+    _SYMBOLS = ('m', 'kg', 's', 'A', 'K', 'mol', 'cd', 'rad', 'sr')
+
+    def __str__(self):
+        parts = []
+        for symbol, fraction in zip(self._SYMBOLS, self[:9]):
+            if fraction.numerator == 0:
+                continue
+            if fraction.denominator == 1:
+                parts.append(symbol if fraction.numerator == 1 else f'{symbol}^{fraction.numerator}')
+            else:
+                parts.append(f'{symbol}^({fraction.numerator}/{fraction.denominator})')
+        unit = ' * '.join(parts) if parts else 'dimensionless'
+        if self.scale_factor != 1:
+            unit += f' * {self.scale_factor:g}'
+        return unit
+
+    # make notebooks show the pretty form, not the namedtuple field wall
+    __repr__ = __str__
 
 OBFStackFooter = namedtuple('OBFStackFooter', ['size', 'has_col_positions', 'has_col_labels', 'col_positions', 'col_labels', 'metadata', 'si_value', 'si_dimensions',
                                                'flush_positions', 'flush_block_size', 'tag_dictionary', 'stack_end_disk',

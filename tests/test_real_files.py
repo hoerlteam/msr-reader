@@ -12,7 +12,7 @@ import unittest
 
 import numpy as np
 
-from msr_reader import OBFFile
+from msr_reader import OBFFile, OBFSIUnit, StackGroup, StackSizes
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
@@ -92,6 +92,14 @@ class TestModernFiles(unittest.TestCase):
             self.assertTrue(header.compressed)
             self.assertEqual(footer.samples_written, 40 * 333 * 333)
             self.assertEqual(obf.shape(0), [40, 333, 333])
+
+            # SI axis units of the modern file: meters along the spatial axes
+            self.assertIsInstance(footer.si_value, OBFSIUnit)
+            for dim in ('ExpControl X', 'ExpControl Y', 'ExpControl Z'):
+                axis_unit = footer.si_dimensions[footer.dimension_labels.index(dim)]
+                self.assertEqual(axis_unit.meters.numerator, 1)
+            self.assertEqual(footer.si_dimensions[0].scale_factor, 1.0)
+            self.assertEqual(str(footer.si_dimensions[0]), 'm')
 
             # pixel sizes are SI meters: 250 nm z-step, 150 nm lateral
             np.testing.assert_allclose(obf.pixel_size(0), [2.5e-7, 1.5e-7, 1.5e-7], rtol=1e-6)

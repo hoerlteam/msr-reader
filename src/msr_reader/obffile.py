@@ -20,12 +20,13 @@ class OBFStackHeader(namedtuple('OBFStackHeader',
     @property
     def numpy_dtype(self):
         '''
-        numpy dtype of the stack data. note that dtype holds the raw OMAS_DT
-        flag from the file (including the complex bit and, for RGB types, the
-        number of samples per pixel), which is not fully captured by a numpy
-        dtype. raises ValueError for unsupported flags.
+        numpy dtype (np.dtype instance, like arr.dtype) of the stack data. note
+        that dtype holds the raw OMAS_DT flag from the file (including the
+        complex bit and, for RGB types, the number of samples per pixel), which
+        is not fully captured by a numpy dtype. raises ValueError for
+        unsupported flags.
         '''
-        return _parse_dtype(self.dtype)[0]
+        return np.dtype(_parse_dtype(self.dtype)[0])
 
 OBFSIFraction = namedtuple('OBFSIFraction', ['numerator', 'denominator'])
 OBFSIUnit = namedtuple('OBFSIUnit', ['meters', 'kilograms', 'seconds', 'amperes', 'kelvin', 'moles',
@@ -471,7 +472,7 @@ class OBFFile:
                 channel_names.append(f'stack {idx}')
 
         try:
-            dtype, _ = _parse_dtype(header_i.dtype)
+            dtype = np.dtype(_parse_dtype(header_i.dtype)[0])
         except ValueError:
             dtype = None
 

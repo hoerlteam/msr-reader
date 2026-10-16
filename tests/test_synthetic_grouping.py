@@ -78,7 +78,9 @@ class TestStackGroups(unittest.TestCase):
         with obf_file(_grouping_file()) as obf:
             group = obf.stack_groups[0]
             self.assertEqual(group.shape, (3, 2))
-            self.assertEqual(np.dtype(group.dtype).name, 'int16')
+            # dtype is a np.dtype instance (like arr.dtype), not the scalar class
+            self.assertEqual(group.dtype, np.dtype('int16'))
+            self.assertEqual(group.dtype.name, 'int16')
             self.assertEqual(group.series, 0)
 
 

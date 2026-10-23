@@ -1,2 +1,6 @@
 *.egg-info
 dist
+.idea
+*__pycache__
+msr-test-files
+.DS_Store

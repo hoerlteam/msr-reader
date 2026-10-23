@@ -146,6 +146,38 @@ class TestModernFiles(unittest.TestCase):
                              [(0, ['ATTO 594_STED', 'STAR 635P_STED'])])
             self.assertEqual(obf.read_stack_group(0).shape, (2, 17, 110, 120))
 
+    def test_lightbox_hierarchical_grouping(self):
+        'Lightbox overview file: path-like stack names, no series numbers'
+        path = _path('20261019tests_lightbox.obf')
+
+        # .obf files (Lightbox): hierarchical grouping is on by default
+        with OBFFile(path) as obf:
+            self.assertEqual(obf.num_stacks, 32)
+            groups = obf.stack_groups
+            # 16 acquisitions x 2 channels (STAR RED / STAR ORANGE)
+            self.assertEqual(len(groups), 16)
+            for g in groups:
+                self.assertEqual(g.channel_names, ['STAR RED', 'STAR ORANGE'])
+                self.assertEqual(len(g.indices), 2)
+
+            # the acquisition path (including the timestamp) is the series
+            series = sorted(g.series for g in groups)
+            self.assertIn('Overview 1/14:01:41', series)
+            self.assertIn('Overview 1/Image 1/Image 2/14:04:26', series)
+
+            # same geometry at different times stays in separate acquisitions
+            overviews = [g for g in groups if g.shape == (4, 400, 400)]
+            self.assertEqual(sorted(g.series for g in overviews),
+                             ['Overview 1/14:01:41', 'Overview 1/14:02:03', 'Overview 1/14:02:31'])
+
+            data = obf.read_stack_group(0)
+            self.assertEqual(data.shape, (2, 4, 400, 400))
+            self.assertEqual(data.dtype, np.int16)
+
+        # explicit False overrides the extension-based default
+        with OBFFile(path, group_hierarchical_stacks=False) as obf:
+            self.assertEqual(len(obf.stack_groups), 32)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -193,11 +193,11 @@ def build_obf(stacks, file_format_version=2, file_description='', file_metadata=
 
 
 @contextmanager
-def obf_file(blob, **kwargs):
+def obf_file(blob, filename='synthetic.obf', **kwargs):
     'write a synthetic file to a temporary directory and open it with OBFFile'
     from msr_reader import OBFFile
     with tempfile.TemporaryDirectory() as tmp_dir:
-        path = os.path.join(tmp_dir, 'synthetic.obf')
+        path = os.path.join(tmp_dir, filename)
         with open(path, 'wb') as fd:
             fd.write(blob)
         with OBFFile(path, **kwargs) as obf:

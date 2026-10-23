@@ -1,3 +1,4 @@
+import os
 import re
 import struct
 import warnings
@@ -353,9 +354,15 @@ class OBFFile:
     https://imspectordocs.readthedocs.io/en/latest/fileformat.html
     """
 
-    def __init__(self, path, group_unnamed_stacks=False):
+    def __init__(self, path, group_unnamed_stacks=False, group_hierarchical_stacks=None):
         self.fd = open(path, 'rb')
         self._group_unnamed_stacks = group_unnamed_stacks
+        if group_hierarchical_stacks is None:
+            # auto by file extension: Lightbox writes .obf files with
+            # hierarchical stack names, Imspector writes .msr files (OBF plus
+            # some undocumented extras like GUI state)
+            group_hierarchical_stacks = os.path.splitext(str(path))[1].lower() == '.obf'
+        self._group_hierarchical_stacks = group_hierarchical_stacks
         self._parse_headers()
         self.stack_names = [s.name for s in self.stack_headers]
         self._stack_groups = None
@@ -449,29 +456,61 @@ class OBFFile:
         auxiliary stacks like rescue_info maps, or stacks without a parseable
         name) form single-member groups. every stack is part of exactly one
         group, so the groups are always a partition of all stacks.
+
+        with group_hierarchical_stacks enabled, names containing '/' (as
+        written by the Lightbox software, e.g. 'Overview 1/Image 1/14:03:01/
+        STAR RED') are grouped by the path up to the last component instead:
+        the path identifies the acquisition (the series), the last component
+        is the channel name. enabled by default for .obf files (Lightbox),
+        disabled for .msr files (Imspector); pass group_hierarchical_stacks
+        True/False to override the extension-based default.
         """
         if self._stack_groups is None:
             self._stack_groups = self._compute_stack_groups()
         return self._stack_groups
+
+    def _parse_stack_name(self, idx):
+        """
+        (series, channel name) parsed from the stack name, (None, None) for
+        stacks that are never treated as channels (auxiliary data like
+        rescue_info maps, or names that match no convention).
+
+        series is the acquisition identifier: the number in curly braces for
+        default Imspector names ('STAR RED_CONF {0}'), or the path up to the
+        last '/' component for hierarchical names if group_hierarchical_stacks
+        is enabled.
+        """
+        name = self.stack_names[idx]
+
+        # auxiliary data like ResCue switch-off maps is never treated as a channel
+        if 'rescue_info' in name:
+            return None, None
+
+        match = STACK_NAME_PATTERN.match(name)
+        if match is not None:
+            return int(match.group('series')), match.group('base')
+
+        if self._group_hierarchical_stacks:
+            path, _, channel = name.rpartition('/')
+            if path and channel:
+                return path, channel
+
+        return None, None
 
     def _compute_stack_groups(self):
         groups = []
         key_to_group = {}
         for idx in range(self.num_stacks):
             name = self.stack_names[idx]
+            series, channel = self._parse_stack_name(idx)
 
-            # auxiliary data like ResCue switch-off maps is never treated as a channel
-            if 'rescue_info' in name:
-                key = None
+            if channel is not None:
+                key = (series,) + self._group_key(idx)
+            elif name == '' and self._group_unnamed_stacks:
+                # opt-in: group unnamed stacks by geometry alone (series unknown)
+                key = (None,) + self._group_key(idx)
             else:
-                match = STACK_NAME_PATTERN.match(name)
-                if match is not None:
-                    key = (int(match.group('series')),) + self._group_key(idx)
-                elif name == '' and self._group_unnamed_stacks:
-                    # opt-in: group unnamed stacks by geometry alone (series unknown)
-                    key = (None,) + self._group_key(idx)
-                else:
-                    key = None
+                key = None
 
             if key is None:
                 groups.append([idx])
@@ -492,10 +531,10 @@ class OBFFile:
         channel_names = []
         for idx in indices:
             name = self.stack_names[idx]
-            match = STACK_NAME_PATTERN.match(name)
-            if match is not None:
-                series = int(match.group('series'))
-                channel_names.append(match.group('base'))
+            s, channel = self._parse_stack_name(idx)
+            if channel is not None:
+                series = s
+                channel_names.append(channel)
             elif name:
                 channel_names.append(name)
             else:

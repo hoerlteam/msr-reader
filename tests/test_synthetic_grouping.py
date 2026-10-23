@@ -32,6 +32,31 @@ def _grouping_file():
     return build_obf(specs)
 
 
+def _hierarchical_file():
+    'Lightbox-style names: path/channel, same channel and geometry at different paths, a rescue mask'
+    specs = [
+        StackSpec('Overview 1/14:01:41/STAR RED', (2, 3), INT16, struct.pack('<6h', *range(6)), lengths=(2.0, 3.0)),
+        StackSpec('Overview 1/14:01:41/STAR ORANGE', (2, 3), INT16, struct.pack('<6h', *range(6, 12)), lengths=(2.0, 3.0)),
+        StackSpec('Overview 1/14:02:03/STAR RED', (2, 3), INT16, struct.pack('<6h', *range(6)), lengths=(2.0, 3.0)),
+        StackSpec('Overview 1/Image 1/14:03:01/STAR RED', (2, 3), INT16, struct.pack('<6h', *range(6)), lengths=(2.0, 3.0)),
+        StackSpec('Overview 1/Image 1/14:03:01/STAR ORANGE', (2, 3), INT16, struct.pack('<6h', *range(6, 12)), lengths=(2.0, 3.0)),
+        StackSpec('Overview 1/14:01:41/STAR RED_rescue_info', (2, 3), UINT8, bytes(6)),
+    ]
+    return build_obf(specs)
+
+
+def _hierarchical_groups():
+    return [
+        # path up to the last component identifies the acquisition
+        ('Overview 1/14:01:41', ['STAR RED', 'STAR ORANGE'], [0, 1]),
+        # same channel and geometry, different path: separate acquisition
+        ('Overview 1/14:02:03', ['STAR RED'], [2]),
+        ('Overview 1/Image 1/14:03:01', ['STAR RED', 'STAR ORANGE'], [3, 4]),
+        # auxiliary stacks never group, even with hierarchical names
+        (None, ['Overview 1/14:01:41/STAR RED_rescue_info'], [5]),
+    ]
+
+
 class TestStackGroups(unittest.TestCase):
 
     def test_grouping_by_series_and_geometry(self):
@@ -64,6 +89,50 @@ class TestStackGroups(unittest.TestCase):
             with obf_file(_grouping_file(), **kwargs) as obf:
                 seen = [i for g in obf.stack_groups for i in g.indices]
                 self.assertEqual(sorted(seen), list(range(obf.num_stacks)))
+
+    def test_hierarchical_names_stay_singletons_in_msr_by_default(self):
+        '.msr files (Imspector): hierarchical names are not grouped by default'
+        with obf_file(_hierarchical_file(), filename='synthetic.msr') as obf:
+            groups = [(g.series, g.channel_names, g.indices) for g in obf.stack_groups]
+        expected = [
+            (None, ['Overview 1/14:01:41/STAR RED'], [0]),
+            (None, ['Overview 1/14:01:41/STAR ORANGE'], [1]),
+            (None, ['Overview 1/14:02:03/STAR RED'], [2]),
+            (None, ['Overview 1/Image 1/14:03:01/STAR RED'], [3]),
+            (None, ['Overview 1/Image 1/14:03:01/STAR ORANGE'], [4]),
+            (None, ['Overview 1/14:01:41/STAR RED_rescue_info'], [5]),
+        ]
+        self.assertEqual(groups, expected)
+
+    def test_hierarchical_names_grouped_in_obf_by_default(self):
+        '.obf files (Lightbox): hierarchical names are grouped by default'
+        with obf_file(_hierarchical_file(), filename='synthetic.obf') as obf:
+            groups = [(g.series, g.channel_names, g.indices) for g in obf.stack_groups]
+        self.assertEqual(groups, _hierarchical_groups())
+
+    def test_group_hierarchical_stacks_option(self):
+        with obf_file(_hierarchical_file(), filename='synthetic.msr',
+                       group_hierarchical_stacks=True) as obf:
+            groups = [(g.series, g.channel_names, g.indices) for g in obf.stack_groups]
+        self.assertEqual(groups, _hierarchical_groups())
+
+        with obf_file(_hierarchical_file(), filename='synthetic.msr',
+                       group_hierarchical_stacks=True) as obf:
+            seen = [i for g in obf.stack_groups for i in g.indices]
+            self.assertEqual(sorted(seen), list(range(obf.num_stacks)))
+            data = obf.read_stack_group(0)
+            self.assertEqual(data.shape, (2, 3, 2))  # (C, Y, X)
+            self.assertEqual(data[0].flatten().tolist(), [0, 1, 2, 3, 4, 5])
+            self.assertEqual(data[1].flatten().tolist(), [6, 7, 8, 9, 10, 11])
+
+    def test_group_hierarchical_stacks_overrides_extension(self):
+        'explicit True/False wins over the extension-based default'
+        with obf_file(_hierarchical_file(), filename='synthetic.obf',
+                       group_hierarchical_stacks=False) as obf:
+            self.assertEqual(len(obf.stack_groups), 6)
+        with obf_file(_hierarchical_file(), filename='synthetic.msr',
+                       group_hierarchical_stacks=True) as obf:
+            self.assertEqual(len(obf.stack_groups), 4)
 
     def test_read_stack_group_stacks_along_first_axis(self):
         with obf_file(_grouping_file()) as obf:

@@ -35,6 +35,13 @@ with OBFFile('file_path.msr') as f:
     # stacks without names (sometimes found in old files) can be grouped by geometry alone:
     # with OBFFile('file_path.msr', group_unnamed_stacks=True) as f:
 
+    # Lightbox files use hierarchical stack names ('Overview 1/Image 1/14:03:01/STAR RED'):
+    # for .obf files, grouping by the path up to the last component (the
+    # acquisition) and the last component (the channel name) is enabled by
+    # default. for .msr files (Imspector), enable it explicitly:
+    # with OBFFile('file_path.msr', group_hierarchical_stacks=True) as f:
+    # pass group_hierarchical_stacks=False to disable it for .obf files.
+
     # metadata
     stack_shapes = f.shapes # list of stack shapes, including stack and dimension names
     pixel_sizes = f.pixel_sizes # like shapes, but with pixel sizes (unit: meters)

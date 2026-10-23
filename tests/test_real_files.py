@@ -146,6 +146,44 @@ class TestModernFiles(unittest.TestCase):
                              [(0, ['ATTO 594_STED', 'STAR 635P_STED'])])
             self.assertEqual(obf.read_stack_group(0).shape, (2, 17, 110, 120))
 
+    def test_4d_nonstandard_axis_order(self):
+        'nonstandard TZYX axis order (file-order axes X, Z, Y, T)'
+        with OBFFile(_path('20261019tests_4d.msr')) as obf:
+            self.assertEqual(obf.num_stacks, 1)
+            header, footer = obf.stack_headers[0], obf.stack_footers[0]
+            self.assertEqual(header.name, 'STAR RED_CONF {0}')
+            self.assertEqual(header.stack_version, 7)
+            self.assertTrue(header.compressed)
+            self.assertEqual(footer.samples_written, 5 * 20 * 4 * 20)
+
+            # the footer dimension labels, not the axis positions, define the
+            # axis meaning (note: the OME-XML in this file mislabels the axes
+            # with a positional XYZTC mapping, the labels here are correct)
+            self.assertEqual(footer.dimension_labels,
+                             ['ExpControl X', 'ExpControl Z', 'ExpControl Y', 'TimeLapse T'])
+            self.assertEqual(obf.shapes[0].dimension_names,
+                             ['TimeLapse T', 'ExpControl Y', 'ExpControl Z', 'ExpControl X'])
+
+            # SI units per axis: meters for the spatial axes, seconds for T
+            for dim in ('ExpControl X', 'ExpControl Y', 'ExpControl Z'):
+                axis_unit = footer.si_dimensions[footer.dimension_labels.index(dim)]
+                self.assertEqual(axis_unit.meters.numerator, 1)
+            t_unit = footer.si_dimensions[footer.dimension_labels.index('TimeLapse T')]
+            self.assertEqual(t_unit.seconds.numerator, 1)
+
+            # numpy array is (T, Y, Z, X): 5 frames, 20x20 px, 4 slices
+            self.assertEqual(obf.shape(0), [5, 20, 4, 20])
+            # 10 s frame interval, 100 nm lateral, 500 nm z-step
+            np.testing.assert_allclose(obf.pixel_size(0), [10.0, 1.0e-7, 5.0e-7, 1.0e-7], rtol=1e-6)
+
+            data = obf.read_stack(0)
+            self.assertEqual(data.shape, (5, 20, 4, 20))
+            self.assertEqual(data.dtype, np.int16)
+
+            groups = obf.stack_groups
+            self.assertEqual([(g.series, g.channel_names) for g in groups], [(0, ['STAR RED_CONF'])])
+            self.assertEqual(obf.read_stack_group(0).shape, (1, 5, 20, 4, 20))
+
     def test_lightbox_hierarchical_grouping(self):
         'Lightbox overview file: path-like stack names, no series numbers'
         path = _path('20261019tests_lightbox.obf')

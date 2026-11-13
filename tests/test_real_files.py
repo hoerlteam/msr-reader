@@ -24,8 +24,10 @@ def _path(name):
 class TestOldFiles(unittest.TestCase):
     'format version 1 files with version 5 stack footers (2015 era)'
 
-    def test_conf01(self):
-        with OBFFile(_path('conf01.msr')) as obf:
+    def test_conf01_continuous_point_measurement(self):
+        # a 1024-sample 1D time series / continuous point measurement
+        # (footer label 'ExpControl T'), not an image
+        with OBFFile(_path('conf01_continuous_point_measurement.msr')) as obf:
             self.assertEqual(obf.main_header.format_version, 1)
             self.assertEqual(obf.get_ome_xml_metadata(), '')
 

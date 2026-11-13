@@ -556,6 +556,26 @@ class OBFFile:
         group = self.stack_groups[group_idx]
         return np.stack([self.read_stack(i) for i in group.indices], axis=axis)
 
+    def read_stack_xr(self, idx):
+        """
+        read stack with index idx into an xarray.DataArray with labelled
+        dimensions and physical coordinates (SI units of the file: meters
+        for spatial axes, seconds for time). requires the optional xarray
+        dependency: pip install msr-reader[xarray]
+        """
+        from .xarray_io import stack_to_xarray
+        return stack_to_xarray(self, idx)
+
+    def read_stack_group_xr(self, group_idx, axis=0):
+        """
+        read all stacks of a group into one xarray.DataArray, stacked along a
+        new 'channel' axis (at position axis, default first) labelled with the
+        channel names. requires the optional xarray dependency:
+        pip install msr-reader[xarray]
+        """
+        from .xarray_io import stack_group_to_xarray
+        return stack_group_to_xarray(self, group_idx, axis=axis)
+
     def get_imspector_xml_metadata(self, stack_idx):
         """
         get XML metadata string of stack with index stack_idx

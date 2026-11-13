@@ -19,6 +19,9 @@ classifiers = [
 ]
 dependencies = ["numpy"]
 
+[project.optional-dependencies]
+xarray = ["xarray"]
+
 [project.urls]
 "Homepage" = "https://github.com/hoerlteam/msr-reader"
 "Bug Tracker" = "https://github.com/hoerlteam/msr-reader/issues"

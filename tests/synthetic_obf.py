@@ -34,9 +34,15 @@ def _length_prefixed(string):
     return struct.pack('<L', len(bytes_)) + bytes_
 
 
-def _si_unit_bytes(scale_factor=1.0):
-    # 9 (numerator, denominator) int32 fractions + one double scale factor
-    return struct.pack('<18ld', *([0] * 18), scale_factor)
+def _si_unit_bytes(scale_factor=1.0, unit='dimensionless'):
+    # 9 (numerator, denominator) int32 fractions + one double scale factor;
+    # unit is given by base-unit symbol, e.g. 'm' or 's'
+    exponents = {'m': 0, 'kg': 1, 's': 2, 'A': 3, 'K': 4, 'mol': 5, 'cd': 6, 'rad': 7, 'sr': 8}
+    fractions = [0] * 18
+    if unit != 'dimensionless':
+        i = exponents[unit]
+        fractions[2 * i:2 * i + 2] = [1, 1]
+    return struct.pack('<18ld', *fractions, scale_factor)
 
 
 class StackSpec:
@@ -57,6 +63,8 @@ class StackSpec:
     :param col_positions: per-axis list of float positions or None
     :param col_labels: per-axis list of label strings or None
     :param dimension_labels: per-axis dimension label (default: empty strings)
+    :param si_units: per-axis SI unit symbol ('m', 's', ...) for the footer
+        si_dimensions, in file axis order (default: dimensionless)
     :param reserved: OBF stack header reserved field, 0 marks a data-less
         stack (real files carry 1)
     :param extra_footer_bytes: bytes appended to the footer without updating
@@ -67,7 +75,7 @@ class StackSpec:
                  lengths=None, compression=False, description='',
                  metadata='', tag_dict=None, samples_written=None,
                  col_positions=None, col_labels=None,
-                 dimension_labels=None, reserved=1, extra_footer_bytes=0):
+                 dimension_labels=None, si_units=None, reserved=1, extra_footer_bytes=0):
         self.name = name
         self.size = tuple(size)
         self.dtype_flags = dtype_flags
@@ -82,6 +90,7 @@ class StackSpec:
         self.col_positions = col_positions
         self.col_labels = col_labels
         self.dimension_labels = dimension_labels
+        self.si_units = si_units
         self.reserved = reserved
         self.extra_footer_bytes = extra_footer_bytes
 
@@ -128,7 +137,11 @@ def _stack_blob(spec, next_stack_pos):
                           *[1 if l is not None else 0 for l in col_labels], *([0] * pad))
     fields += struct.pack('<L', len(metadata_b))
     if spec.stack_version >= 2:
-        fields += _si_unit_bytes() * (1 + MAXIMAL_NUMBER_OF_DIMENSIONS)
+        si_units = list(spec.si_units) if spec.si_units is not None else []
+        si_units += ['dimensionless'] * (MAXIMAL_NUMBER_OF_DIMENSIONS - len(si_units))
+        fields += _si_unit_bytes()  # si_value
+        for unit in si_units:
+            fields += _si_unit_bytes(unit=unit)
     if spec.stack_version >= 3:
         fields += struct.pack('<QQ', 0, 0)
     if spec.stack_version >= 4:

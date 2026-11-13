@@ -32,6 +32,12 @@ with OBFFile('file_path.msr') as f:
     groups = f.stack_groups # list of StackGroup
     img = f.read_stack_group(0) # read all "channels", stacked along a new first axis: e.g. (C, Z, Y, X)
 
+    # xarray integration (optional dependency: pip install msr-reader[xarray]):
+    # stacks as xarray.DataArray with labelled dims and physical coordinates
+    # (SI units of the file: meters for spatial axes, seconds for time)
+    da = f.read_stack_xr(idx) # dims e.g. ('z', 'y', 'x'), coords in meters
+    dag = f.read_stack_group_xr(0) # one DataArray with a leading 'channel' dim, labelled with channel names
+
     # stacks without names (sometimes found in old files) can be grouped by geometry alone:
     # with OBFFile('file_path.msr', group_unnamed_stacks=True) as f:
 
